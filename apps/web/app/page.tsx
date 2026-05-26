@@ -2,11 +2,16 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getDashboardStats } from './actions/dashboard';
+import { getRecentLeads } from './actions/leads';
+import type { RecentLead } from './actions/leads';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const stats = await getDashboardStats();
+  const [stats, recentLeads] = await Promise.all([
+    getDashboardStats(),
+    getRecentLeads(5),
+  ]);
 
   if (!stats) {
     return (
@@ -69,6 +74,24 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Recent alerts */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent alerts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentLeads.length === 0 ? (
+            <p className="text-sm text-gray-400">No lead events yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {recentLeads.map((lead) => (
+                <RecentAlertRow key={lead.id} lead={lead} />
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Quick links */}
       <div className="flex gap-3">
         <Link
@@ -96,6 +119,42 @@ function StatCard({ label, value }: { label: string; value: string }) {
         <div className="text-xs text-gray-500 mt-1">{label}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function RecentAlertRow({ lead }: { lead: RecentLead }) {
+  const eligibilityLabel: Record<string, string> = {
+    contactable: 'Contactable',
+    held: 'Held',
+    watch_only: 'Watch only',
+  };
+  const eligibilityVariant: Record<string, 'contactable' | 'held' | 'watchOnly'> = {
+    contactable: 'contactable',
+    held: 'held',
+    watch_only: 'watchOnly',
+  };
+  const variant = eligibilityVariant[lead.eligibility] ?? 'watchOnly';
+  const label = eligibilityLabel[lead.eligibility] ?? lead.eligibility;
+  const enrichedLabel = lead.enriched ? '✓ Enriched' : 'Pending';
+
+  return (
+    <li className="flex items-center gap-3 py-2.5">
+      <Badge variant={variant} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 truncate">
+          {lead.addressLine1}, {lead.city} {lead.zip}
+        </p>
+        <p className="text-xs text-gray-500">
+          {lead.triggerType} · {lead.ownerName ?? 'Owner pending'}
+        </p>
+      </div>
+      <div className="shrink-0 text-right">
+        <span className="text-xs text-gray-400">{label}</span>
+        <p className={`text-xs font-medium ${lead.enriched ? 'text-green-600' : 'text-amber-500'}`}>
+          {enrichedLabel}
+        </p>
+      </div>
+    </li>
   );
 }
 

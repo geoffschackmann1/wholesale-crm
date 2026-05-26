@@ -45,9 +45,28 @@
 
 ---
 
-## Module 3 — Enrichment + alerts 🔲
+## Module 3 — Enrichment + alerts ✅
 
-Next.
+**Status:** Complete. Enrichment workflow, Twilio SMS, Web Push, and acceptance test all in place.
+
+### What runs end-to-end
+- **`packages/enrich/src/batchdata.ts`** — BatchData Property Lookup + Skip Trace adapter. Real API when `BATCHDATA_API_KEY` is set; deterministic mock (hash-based) otherwise so dev works without a live account.
+- **`inngest/functions/enrich-and-alert.ts`** — `lead/created` Inngest workflow:
+  1. Fetch lead + property
+  2. 90-day cache check (skip BatchData if recently enriched)
+  3. Property Lookup → upsert `owners`, update `properties.equity_pct` + `arv`, log cost to `enrichment_jobs`
+  4. Skip Trace → insert `contacts` (up to 5 phones, 2 emails), log cost
+  5. SMS-to-self via Twilio (primary channel) — logs to console in dev
+  6. Web Push (best-effort, silent skip if VAPID keys unset)
+- `held` (Withdrawn) leads: enrichment runs and contacts are stored, but SMS says "⚠️ Withdrawn — contact blocked"
+- **`inngest/functions/ingest-mls.ts`** — fires `lead/created` event after each new `lead_event` insert
+- **`apps/web/app/actions/leads.ts`** — `getRecentLeads()` server action (JOIN properties + owners)
+- **`apps/web/app/page.tsx`** — dashboard "Recent alerts" section
+- **`scripts/run-acceptance-test-m3.ts`** — synthetic Expired + Withdrawn leads, enrichment inline, verifies owners/contacts/enrichment_jobs, SMS message content, 90-day cache skip
+
+### What's stubbed / not yet wired
+- Web Push subscription not yet registered (Module 4 service worker)
+- Supabase Auth still unenforced
 
 ---
 

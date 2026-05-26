@@ -162,6 +162,19 @@ export const ingestMls = inngest.createFunction(
                   .returning({ id: leadEvents.id });
 
                 eventsCreated += rows.length;
+
+                // Fire the Module 3 enrichment + alert workflow for each new lead event
+                for (const row of rows) {
+                  await inngest.send({
+                    name: 'lead/created',
+                    data: {
+                      leadEventId: row.id,
+                      propertyId,
+                      eligibility,
+                      triggerType: entry.newStatus,
+                    },
+                  });
+                }
               }
             }
           }

@@ -1,5 +1,5 @@
 import { serve } from 'inngest/next';
 import { inngest } from '@/lib/inngest';
-import { ingestMls } from '@/lib/inngest-functions';
+import { ingestMls, enrichAndAlert } from '@/lib/inngest-functions';
 
-export const { GET, POST, PUT } = serve({ client: inngest, functions: [ingestMls] });
+export const { GET, POST, PUT } = serve({ client: inngest, functions: [ingestMls, enrichAndAlert] });

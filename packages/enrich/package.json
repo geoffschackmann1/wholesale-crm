@@ -6,5 +6,8 @@
   "main": "src/index.ts",
   "dependencies": {
     "@wholesale-crm/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
   }
 }

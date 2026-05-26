@@ -1,2 +1,2 @@
-// Re-export the ingestMls function from the inngest package
-export { ingestMls } from '@wholesale-crm/inngest';
+// Re-export Inngest functions from the inngest package
+export { ingestMls, enrichAndAlert } from '@wholesale-crm/inngest';

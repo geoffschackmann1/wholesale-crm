@@ -3,3 +3,4 @@
 
 export { inngest } from './client.js';
 export { ingestMls } from './functions/ingest-mls.js';
+export { enrichAndAlert } from './functions/enrich-and-alert.js';
