@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# builds
+.next/
+dist/
+out/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# drizzle
+packages/db/migrations/*.sql
+
+# misc
+.DS_Store
+*.tsbuildinfo
+.turbo/
+.vercel/
+
+# sentry
+.sentryclirc
