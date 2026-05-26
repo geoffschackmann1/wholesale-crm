@@ -70,6 +70,31 @@
 
 ---
 
-## Module 4 — Lead inbox + DFD PWA 🔲
+## Module 4 — Lead inbox + DFD PWA ✅
 
-Pending Module 3.
+**Status:** Complete. Full inbox, lead detail, DFD map shell, PWA manifest + service worker all in place.
+
+### What runs end-to-end
+- **`/inbox`** — lead_events newest-first with eligibility badges, owner name + top phone (if enriched). Dismiss / Snooze 7d / Save actions per card. `held` (Withdrawn) leads show compliance warning; all contact actions blocked.
+- **`/inbox/[id]`** — full lead detail: property info grid, owner/mailing address, contacts list with `tel:` / `sms:` links (hidden for `held`), DNC status badge, map placeholder showing coordinates, Enrich Now button (fires `lead/created` Inngest event), Snooze / Dismiss / Save actions.
+- **`/dfd`** — GPS `watchPosition` route tracking, nearby properties via bounding-box SQL query (color-coded green/gray by buy-box match), tap-to-save modal (BatchData inline + `watch_only` lead_event with `trigger_type='dfd'`), photo upload stub (Supabase Storage with 90-day retention TODO). MapLibre map is a placeholder pending tile-provider key.
+- **PWA** — `manifest.json` (start_url `/inbox`, standalone), `sw.js` (install cache, network-first fetch, Web Push handler, notification click → open URL), `SwRegister` client component in layout.
+- **Nav** — Inbox (with undismissed count badge), DFD, Buy Boxes, Replay.
+- **`scripts/run-acceptance-test-m4.ts`** — 8 checks: inbox data, held eligibility, dismiss/snooze behavior, nearby properties bounding-box, DFD save → watch_only.
+
+### What's stubbed / pending real configuration
+- MapLibre map tiles — add `NEXT_PUBLIC_MAPTILER_KEY` (or any tile provider) and `pnpm add maplibre-gl`
+- Supabase Storage photo bucket lifecycle policy — set 90-day auto-purge in Supabase dashboard
+- Supabase Auth middleware — magic-link gating not yet enforced on routes
+- VAPID keys + push subscription — generate with `npx web-push generate-vapid-keys`, set env vars, register subscription from DFD page
+
+---
+
+## MVP Status
+
+All 4 modules complete. Zero TypeScript errors. Ready for:
+1. Supabase project + `pnpm db:migrate`
+2. `pnpm seed` → `pnpm test:m1`
+3. BatchData + Twilio credentials → `pnpm test:m3`
+4. Deploy to Vercel + configure env vars
+5. Install PWA on phone, confirm SMS-to-self alert end-to-end

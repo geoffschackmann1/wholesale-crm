@@ -12,7 +12,9 @@
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
     "@sentry/nextjs": "^8.0.0",
+    "@supabase/supabase-js": "^2.47.0",
     "@wholesale-crm/db": "workspace:*",
+    "@wholesale-crm/enrich": "workspace:*",
     "@wholesale-crm/inngest": "workspace:*",
     "drizzle-orm": "^0.36.4",
     "inngest": "^3.22.0",
