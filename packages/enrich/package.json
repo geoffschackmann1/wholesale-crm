@@ -1,0 +1,13 @@
+{
+  "name": "@wholesale-crm/enrich",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@wholesale-crm/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  }
+}

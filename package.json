@@ -1,0 +1,27 @@
+{
+  "name": "wholesale-crm",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "typecheck": "pnpm --filter @wholesale-crm/db exec tsc --noEmit && pnpm --filter web exec tsc --noEmit",
+    "db:generate": "pnpm --filter @wholesale-crm/db db:generate",
+    "db:migrate": "pnpm --filter @wholesale-crm/db db:migrate",
+    "seed": "pnpm --filter scripts tsx seed-properties.ts",
+    "seed:fresh": "pnpm --filter scripts tsx seed-properties.ts -- --fresh",
+    "test:m1": "pnpm --filter scripts tsx run-acceptance-test.ts",
+    "test:m2": "pnpm --filter @wholesale-crm/scripts tsx run-acceptance-test-m2.ts",
+    "test:m3": "pnpm --filter @wholesale-crm/scripts tsx run-acceptance-test-m3.ts",
+    "replay": "pnpm --filter @wholesale-crm/scripts tsx replay-delistings.ts",
+    "test:m4": "pnpm --filter @wholesale-crm/scripts tsx run-acceptance-test-m4.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  }
+}

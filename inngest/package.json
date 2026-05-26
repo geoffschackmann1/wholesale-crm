@@ -1,0 +1,15 @@
+{
+  "name": "@wholesale-crm/inngest",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "@types/web-push": "^3.6.3",
+    "@wholesale-crm/db": "workspace:*",
+    "@wholesale-crm/enrich": "workspace:*",
+    "inngest": "^3.22.0",
+    "twilio": "^5.3.7",
+    "web-push": "^3.6.7"
+  }
+}
