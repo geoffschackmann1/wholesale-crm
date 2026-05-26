@@ -10,7 +10,9 @@
     "db:migrate": "pnpm --filter @wholesale-crm/db db:migrate",
     "seed": "pnpm --filter scripts tsx seed-properties.ts",
     "seed:fresh": "pnpm --filter scripts tsx seed-properties.ts -- --fresh",
-    "test:m1": "pnpm --filter scripts tsx run-acceptance-test.ts"
+    "test:m1": "pnpm --filter scripts tsx run-acceptance-test.ts",
+    "test:m2": "pnpm --filter @wholesale-crm/scripts tsx run-acceptance-test-m2.ts",
+    "replay": "pnpm --filter @wholesale-crm/scripts tsx replay-delistings.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

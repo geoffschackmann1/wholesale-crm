@@ -9,9 +9,7 @@
   },
   "dependencies": {
     "@faker-js/faker": "^9.3.0",
-    "@wholesale-crm/db": "workspace:*",
-    "drizzle-orm": "^0.36.4",
-    "postgres": "^3.4.5"
+    "@wholesale-crm/db": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

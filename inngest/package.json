@@ -2,5 +2,10 @@
   "name": "@wholesale-crm/inngest",
   "version": "0.0.1",
   "private": true,
-  "main": "index.ts"
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "@wholesale-crm/db": "workspace:*",
+    "inngest": "^3.22.0"
+  }
 }

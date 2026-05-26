@@ -13,15 +13,44 @@
 - Admin UI (Next.js 14 App Router): `/buy-boxes` list + `/buy-boxes/new` create form + `/buy-boxes/[id]` detail
 
 ### What's stubbed / not yet wired
-- `packages/ingest` — placeholder (Module 2)
+- `packages/ingest` — MlsAdapter interface defined; real RESO client deferred to broker onboarding
 - `packages/enrich` — placeholder (Module 3)
-- `inngest/` — placeholder (Module 3)
 - Supabase Auth (magic-link) not yet enforced in the web app — no auth middleware yet
-- `equity_pct` and `owner_occupied_flag` filtering in buy-box engine pass-through (null → skip, as designed — requires Module 3 enrichment)
+- `equity_pct` / `owner_occupied_flag` buy-box filters pass-through when null (enrichment not run, as designed)
 
-### Next: Module 2 — Ingestion + status-change detection
-- Inngest scheduled function polling MLS RESO Web API every 5 min
-- Upsert into `properties`, append to `property_status_history`
-- On delisting transition, evaluate buy-boxes and insert `lead_events`
-- Idempotency: re-polling must not duplicate events
-- MLS stand-in: `scripts/replay-delistings.ts` replays the seed stream at accelerated speed
+---
+
+## Module 2 — Ingestion + status-change detection ✅
+
+**Status:** Complete. Inngest function, replay harness, and acceptance test all in place.
+
+### What runs end-to-end
+- **`replay_queue` table** added to schema — MLS stand-in; each row is one status-change event with prev/new status snapshot
+- **`inngest/functions/ingest-mls.ts`** — Inngest cron (`*/5 * * * *`) that:
+  - Pulls up to 100 pending `replay_queue` entries ordered by `occurred_at`
+  - Upserts `properties` by `mls_listing_id`; always appends to `property_status_history`
+  - Detects delisting transitions (`newStatus ∈ {Expired,Withdrawn,Cancelled}` AND `prevStatus ≠ newStatus`)
+  - Evaluates every active buy-box via `propertyMatchesBuyBox`; inserts matching `lead_events` with `onConflictDoNothing` (idempotent on unique index)
+  - Handles Withdrawn→Active→Withdrawn re-delist: each distinct `occurred_at` creates a separate event
+  - Marks queue entries processed
+- **`scripts/replay-delistings.ts`** — seeds 110 queue entries (95 normal delistings + 5 re-delist chains), sorted by `occurred_at`; optional `--dry-run` flag; triggers Inngest dev server or prod after insert
+- **`apps/web/app/replay/page.tsx`** — admin UI showing queue stats and last 20 processed events
+- **`apps/web/app/api/inngest/route.ts`** — Next.js Inngest handler serving `ingestMls`
+- **`scripts/run-acceptance-test-m2.ts`** — full acceptance test (no Inngest server required): populate queue → process → verify counts → idempotency → re-delist → eligibility spot-checks
+
+### What's stubbed / not yet wired
+- `packages/enrich` — placeholder (Module 3)
+- Supabase Auth still unenforced
+- `packages/ingest/MlsAdapter` — interface defined; real RESO client awaits broker onboarding
+
+---
+
+## Module 3 — Enrichment + alerts 🔲
+
+Next.
+
+---
+
+## Module 4 — Lead inbox + DFD PWA 🔲
+
+Pending Module 3.

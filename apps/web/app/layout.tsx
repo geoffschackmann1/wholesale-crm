@@ -24,6 +24,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               >
                 Buy Boxes
               </Link>
+              <Link
+                href="/replay"
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
+                Replay
+              </Link>
             </nav>
           </header>
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-8">{children}</main>

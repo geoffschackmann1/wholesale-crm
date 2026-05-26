@@ -172,6 +172,32 @@ export const leadEventsRelations = relations(leadEvents, ({ one }) => ({
   }),
 }));
 
+// ─── replay_queue ─────────────────────────────────────────────────────────────────
+
+export const replayQueue = pgTable('replay_queue', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  propertyId: uuid('property_id'),
+  // snapshot of the property at this point in the replay
+  addressLine1: text('address_line1').notNull(),
+  city: text('city').notNull(),
+  state: text('state').notNull(),
+  zip: text('zip').notNull(),
+  county: text('county'),
+  beds: integer('beds'),
+  baths: doublePrecision('baths'),
+  sqft: integer('sqft'),
+  yearBuilt: integer('year_built'),
+  propertyType: text('property_type'),
+  currentListPrice: integer('current_list_price'),
+  daysOnMarket: integer('days_on_market'),
+  mlsListingId: text('mls_listing_id').notNull(),
+  newStatus: text('new_status').notNull(),
+  prevStatus: text('prev_status'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── enrichment_jobs ──────────────────────────────────────────────────────────────
 
 export const enrichmentJobs = pgTable('enrichment_jobs', {

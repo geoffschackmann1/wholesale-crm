@@ -1,15 +1,10 @@
 import { faker } from '@faker-js/faker';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import * as schema from '@wholesale-crm/db/src/schema.js';
-import { sql } from 'drizzle-orm';
-
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is required');
-}
-
-const queryClient = postgres(process.env.DATABASE_URL);
-const db = drizzle(queryClient, { schema });
+import {
+  properties,
+  propertyStatusHistory,
+  requireDb,
+  sql,
+} from '@wholesale-crm/db';
 
 const ZIPS = Array.from({ length: 20 }, (_, i) => String(10001 + i));
 const PROPERTY_TYPES = ['SFR', 'MFR', 'condo', 'land'] as const;
@@ -32,6 +27,8 @@ function randomDate(daysBack: number): Date {
 }
 
 export async function seedProperties(fresh = false) {
+  const db = requireDb();
+
   if (fresh) {
     console.log('Truncating tables...');
     await db.execute(sql`TRUNCATE TABLE enrichment_jobs, lead_events, contacts, owners, property_status_history, properties RESTART IDENTITY CASCADE`);
@@ -43,8 +40,8 @@ export async function seedProperties(fresh = false) {
   const TOTAL = 5000;
 
   for (let batch = 0; batch < TOTAL / BATCH_SIZE; batch++) {
-    const propertyRows: (typeof schema.properties.$inferInsert)[] = [];
-    const historyRows: (typeof schema.propertyStatusHistory.$inferInsert)[] = [];
+    const propertyRows: (typeof properties.$inferInsert)[] = [];
+    const historyRows: (typeof propertyStatusHistory.$inferInsert)[] = [];
 
     for (let i = 0; i < BATCH_SIZE; i++) {
       const zipIndex = (batch * BATCH_SIZE + i) % 20;
@@ -111,10 +108,10 @@ export async function seedProperties(fresh = false) {
       }
     }
 
-    await db.insert(schema.properties).values(propertyRows);
+    await db.insert(properties).values(propertyRows);
 
     if (historyRows.length > 0) {
-      await db.insert(schema.propertyStatusHistory).values(historyRows);
+      await db.insert(propertyStatusHistory).values(historyRows);
     }
 
     if ((batch + 1) % 10 === 0) {
@@ -123,7 +120,6 @@ export async function seedProperties(fresh = false) {
   }
 
   console.log('Seed complete: 5,000 properties inserted.');
-  await queryClient.end();
 }
 
 // Run if called directly

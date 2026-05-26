@@ -1,20 +1,22 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import { eq, inArray, count, sql } from 'drizzle-orm';
-import * as schema from '@wholesale-crm/db/src/schema.js';
-import { propertyMatchesBuyBox, deriveEligibility } from '@wholesale-crm/db/src/buy-box.js';
-
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is required');
-}
-
-const queryClient = postgres(process.env.DATABASE_URL);
-const db = drizzle(queryClient, { schema });
+import {
+  requireDb,
+  properties,
+  buyBoxes,
+  leadEvents,
+  propertyMatchesBuyBox,
+  deriveEligibility,
+  sql,
+  eq,
+  inArray,
+  count,
+} from '@wholesale-crm/db';
 
 const DELISTED_STATUSES = ['Expired', 'Withdrawn', 'Cancelled'];
 
 async function runAcceptanceTest() {
   console.log('=== Acceptance Test: Module 1 ===\n');
+
+  const db = requireDb();
 
   let passed = true;
   const failures: string[] = [];
@@ -37,7 +39,7 @@ async function runAcceptanceTest() {
   // Step 2: Check seed data (expects seed to have been run, or run it here)
   const [{ value: propCount }] = await db
     .select({ value: count() })
-    .from(schema.properties);
+    .from(properties);
 
   console.log(`\nStep 2: Property count = ${propCount}`);
   if (Number(propCount) === 0) {
@@ -50,7 +52,7 @@ async function runAcceptanceTest() {
   console.log('\nStep 3: Inserting buy boxes...');
 
   const [boxA] = await db
-    .insert(schema.buyBoxes)
+    .insert(buyBoxes)
     .values({
       id: crypto.randomUUID(),
       name: 'Affordable SFR',
@@ -67,7 +69,7 @@ async function runAcceptanceTest() {
     .returning();
 
   const [boxB] = await db
-    .insert(schema.buyBoxes)
+    .insert(buyBoxes)
     .values({
       id: crypto.randomUUID(),
       name: 'Mid-Market',
@@ -90,17 +92,17 @@ async function runAcceptanceTest() {
 
   const delistedProperties = await db
     .select()
-    .from(schema.properties)
-    .where(inArray(schema.properties.currentStatus, DELISTED_STATUSES));
+    .from(properties)
+    .where(inArray(properties.currentStatus, DELISTED_STATUSES));
 
   console.log(`  Total delisted properties: ${delistedProperties.length}`);
 
   const activeBuyBoxes = await db
     .select()
-    .from(schema.buyBoxes)
-    .where(eq(schema.buyBoxes.isActive, true));
+    .from(buyBoxes)
+    .where(eq(buyBoxes.isActive, true));
 
-  const leadEventRows: (typeof schema.leadEvents.$inferInsert)[] = [];
+  const leadEventRows: (typeof leadEvents.$inferInsert)[] = [];
   let boxAMatchCount = 0;
   let boxBMatchCount = 0;
 
@@ -138,14 +140,14 @@ async function runAcceptanceTest() {
     }
   }
 
-  // Step 5: Insert lead_events with idempotency (upsert / insert with conflict ignore)
+  // Step 5: Insert lead_events with idempotency (insert with conflict ignore)
   console.log('\nStep 5: Inserting lead_events...');
   if (leadEventRows.length > 0) {
     // Insert in batches of 100 to avoid parameter limits
     const BATCH = 100;
     for (let i = 0; i < leadEventRows.length; i += BATCH) {
       await db
-        .insert(schema.leadEvents)
+        .insert(leadEvents)
         .values(leadEventRows.slice(i, i + BATCH))
         .onConflictDoNothing();
     }
@@ -159,26 +161,29 @@ async function runAcceptanceTest() {
 
   const eligibilityCounts = await db
     .select({
-      eligibility: schema.leadEvents.eligibility,
+      eligibility: leadEvents.eligibility,
       cnt: count(),
     })
-    .from(schema.leadEvents)
-    .groupBy(schema.leadEvents.eligibility);
+    .from(leadEvents)
+    .groupBy(leadEvents.eligibility);
 
-  const totalLeadEvents = eligibilityCounts.reduce((sum: number, r: { eligibility: string | null; cnt: number }) => sum + Number(r.cnt), 0);
+  const totalLeadEvents = eligibilityCounts.reduce(
+    (sum: number, r: { eligibility: string; cnt: number }) => sum + Number(r.cnt),
+    0,
+  );
   console.log(`\n  Lead events by eligibility:`);
   for (const row of eligibilityCounts) {
     console.log(`    ${row.eligibility}: ${row.cnt}`);
   }
   console.log(`  Total lead_events: ${totalLeadEvents}`);
 
-  // Step 7: Idempotency check — re-run step 4 and verify count doesn't change
+  // Step 7: Idempotency check — re-run insert and verify count doesn't change
   console.log('\nStep 7: Idempotency check...');
   if (leadEventRows.length > 0) {
     const BATCH = 100;
     for (let i = 0; i < leadEventRows.length; i += BATCH) {
       await db
-        .insert(schema.leadEvents)
+        .insert(leadEvents)
         .values(leadEventRows.slice(i, i + BATCH))
         .onConflictDoNothing();
     }
@@ -186,7 +191,7 @@ async function runAcceptanceTest() {
 
   const [{ value: countAfterRerun }] = await db
     .select({ value: count() })
-    .from(schema.leadEvents);
+    .from(leadEvents);
 
   assert(
     Number(countAfterRerun) === totalLeadEvents,
@@ -198,8 +203,8 @@ async function runAcceptanceTest() {
 
   const withdrawnEvent = await db
     .select()
-    .from(schema.leadEvents)
-    .where(eq(schema.leadEvents.triggerType, 'Withdrawn'))
+    .from(leadEvents)
+    .where(eq(leadEvents.triggerType, 'Withdrawn'))
     .limit(1);
 
   if (withdrawnEvent.length > 0) {
@@ -213,8 +218,8 @@ async function runAcceptanceTest() {
 
   const expiredEvent = await db
     .select()
-    .from(schema.leadEvents)
-    .where(eq(schema.leadEvents.triggerType, 'Expired'))
+    .from(leadEvents)
+    .where(eq(leadEvents.triggerType, 'Expired'))
     .limit(1);
 
   if (expiredEvent.length > 0) {
@@ -228,8 +233,8 @@ async function runAcceptanceTest() {
 
   const cancelledEvent = await db
     .select()
-    .from(schema.leadEvents)
-    .where(eq(schema.leadEvents.triggerType, 'Cancelled'))
+    .from(leadEvents)
+    .where(eq(leadEvents.triggerType, 'Cancelled'))
     .limit(1);
 
   if (cancelledEvent.length > 0) {
@@ -253,7 +258,6 @@ async function runAcceptanceTest() {
   }
   console.log('='.repeat(40));
 
-  await queryClient.end();
   process.exit(passed ? 0 : 1);
 }
 
