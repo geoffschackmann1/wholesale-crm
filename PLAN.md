@@ -1,8 +1,8 @@
 # Wholesale CRM — Ultra-Plan
 
 > Single-tenant rebuild of resimpli.com for personal use, **anchored on one wedge**:
-> a withdrawn listing inside my buy-box → push alert on my phone within 10 minutes,
-> with owner contact info already attached.
+> a delisted listing inside my buy-box → alert on my phone within 10 minutes,
+> with owner contact info already attached. (Expired = contactable; Withdrawn = alert-only.)
 
 **Repo:** `geoffschackmann1/wholesale-crm` (private)
 **Audience:** me (solo wholesaler), maybe SaaS later
@@ -13,17 +13,23 @@
 ## TL;DR
 
 - MVP = **4 modules**, not 12. Ship in ~6 weeks of focused work.
-- Core wedge = **real-time delisting alerts**, not a CRM clone.
+- Core wedge = **real-time delisting alerts**, not a CRM clone — **Expired is the auto-contactable trigger; Withdrawn is alert-only (still under a listing agreement)**.
 - Stack is locked (Next.js + Supabase + Inngest + Twilio + BatchData).
 - Long-pole external clocks (A2P 10DLC, Gmail OAuth, BatchData onboarding) kick off **Day 1, in parallel** with code.
-- Compliance gates (TCPA, A2P, DNC, CAN-SPAM) are blockers — not nice-to-haves.
+- **Resolve before code — two potential project-killers:** (S2/R2) whether any broker can grant a feed that includes off-market statuses *and* permits owner outreach, and (R1) whether BatchData's real-time API is pay-as-you-go or has a $2k/mo floor.
+- Compliance gates (MLS data-use, real-estate solicitation, TCPA/PEWC, DNC+RND, A2P, state wholesaling licensure, CAN-SPAM) are blockers — not nice-to-haves.
 - Everything else from REsimpli (dialer, drip, mail, CRM, accounting, AI agents) is **Phase 2**.
 
 ---
 
 ## 1. The wedge — one sentence
 
-> "When a house in *my buy-box* gets *withdrawn or expired* from the MLS, I get a push notification within **10 minutes** with the owner's name, mailing address, and best phone number — and one tap puts it in my pipeline."
+> "When a house in *my buy-box* gets *delisted* from the MLS, I get a push notification within **10 minutes** with the owner's name, mailing address, and best phone number — and one tap puts it in my pipeline."
+
+**The three delisting statuses are NOT legally equal — the wedge treats them differently:**
+- **Expired** = listing agreement lapsed. Owner is cleanly contactable (subject to DNC/TCPA). **This is the primary, auto-contactable trigger.**
+- **Cancelled** = ambiguous; often relisted or still represented. Surfaced as *watch-only* until I manually confirm it's not relisted.
+- **Withdrawn / Temporarily-Off-Market** = **seller is STILL under a listing agreement**. Contacting the owner risks tortious interference + MLS/state-real-estate-commission violations. Surfaced as *held* with a `do_not_contact_until_confirmed_expired` flag — alert me, but block contact actions until the listing actually expires.
 
 If a feature doesn't serve that sentence, it's Phase 2.
 
@@ -35,7 +41,7 @@ If a feature doesn't serve that sentence, it's Phase 2.
 - MLS ingestion (one market) + status-change detection (focus on `Withdrawn`, `Expired`, `Cancelled`).
 - Buy-box rules engine (geography, price, beds, property type, equity threshold).
 - BatchData enrichment (owner, mailing address, phones, equity).
-- Push alerts to my phone (mobile push + SMS fallback).
+- Alerts to my phone (SMS-to-self primary + Web Push enhancement — see R11).
 - Lead inbox + dismiss/keep/contact action.
 - DFD PWA (because driving routes feed the same pipeline).
 
@@ -51,11 +57,11 @@ Billing • RBAC • orgs • SSO • white-label • support tooling • integr
 
 | Decision | Locked answer | Why |
 |---|---|---|
-| Target market | **TBD — I'll name it before code starts.** Default: home market with willing broker. | MLS access is per-market. |
+| Target market | **TBD — I'll name it before code starts**, and the choice must clear two gates first: (1) the state permits unlicensed wholesaling at my cadence (R10), (2) a broker there can grant an off-market + outreach-permitted feed (S2/R2). Default: home market with willing broker. | MLS access — and the *legality of the business* — is per-market. |
 | Single user | Yes. Auth = Supabase magic link, my email only. | No SaaS chrome. |
 | Hosting | **Vercel** for app, **Supabase** for db+auth, **Inngest Cloud** for jobs. | All have generous free tiers. |
 | Mobile | **PWA installed to home screen**. Native only if push notifications underperform. | Ship faster, one codebase. |
-| Test data | Seed script: 5,000 fake properties + 100 simulated "Withdrawn" events spread over 30 days. | Don't wait on real MLS to start. |
+| Test data | Seed script: 5,000 fake properties + 100 simulated delisting events (mix of Expired/Withdrawn/Cancelled) spread over 30 days. | Don't wait on real MLS to start; exercises all three eligibility paths. |
 | Code style | TypeScript strict, Drizzle, Tailwind + shadcn/ui, server actions over REST where possible. | Convention beats deliberation. |
 | Error handling | Sentry from day 1 (free tier). | One install. |
 | Secrets | `.env.local` in dev, Vercel env vars in prod, never committed. | Standard. |
@@ -73,7 +79,7 @@ Billing • RBAC • orgs • SSO • white-label • support tooling • integr
 | Background jobs | Inngest |
 | UI | Tailwind + shadcn/ui |
 | Maps (DFD) | MapLibre + OpenStreetMap tiles (free) |
-| Push notifications | Web Push API (PWA) + Twilio SMS fallback |
+| Alerts | Twilio SMS-to-self (primary) + Web Push API/PWA (enhancement) — see R11 |
 | Error tracking | Sentry |
 | Hosting | Vercel + Supabase + Inngest Cloud |
 
@@ -99,14 +105,16 @@ Build strictly in order. Each module ends with a measurable acceptance test. No 
 - `properties` (address normalized, lat/lng, beds/baths/sqft, year_built, current_list_price, current_status, last_status_change_at)
 - `property_status_history` (property_id, status, source, occurred_at)
 - `owners` (name, mailing_address, owner_occupied_flag, ownership_length_yrs)
-- `contacts` (owner_id, kind ∈ {phone, email}, value, confidence_score)
+- `contacts` (owner_id, kind ∈ {phone, email}, value, confidence_score, `dnc_status`, `dnc_checked_at`, `is_likely_cell`, `reassigned_checked_at`, `consent_basis` nullable)
 - `buy_boxes` (name, criteria_json — county, zip set, price min/max, beds min, sqft min, equity_pct_min, occupancy_flag, exclusion_list)
-- `lead_events` (property_id, buy_box_id, trigger_type, occurred_at, dismissed_at)
+- `lead_events` (property_id, buy_box_id, trigger_type, `eligibility` ∈ {`contactable`, `watch_only`, `held`} — derived from delisting status per §1, occurred_at, dismissed_at)
 - `enrichment_jobs` (property_id, provider, status, response_json, cost_cents)
+
+**Address normalization (don't reinvent):** use BatchData's normalized address as the canonical match key once a property is enriched; on raw ingest, run a USPS-style normalize step first so dedup + Module 2 idempotency are stable before enrichment lands.
 
 **Buy-box rule engine:** declarative JSON criteria evaluated as a SQL filter at query time AND on each incoming status-change event. Single function — `propertyMatchesBuyBox(property, buyBox) → boolean` — reused everywhere.
 
-**Acceptance test:** Seed 5,000 fake properties. Define 2 buy-boxes. Run match. Output count matches hand-counted SQL answer.
+**Acceptance test:** Seed 5,000 fake properties. Define 2 buy-boxes. Run match. Output count matches hand-counted SQL answer. Verify `lead_events.eligibility` is set correctly per status (Expired→`contactable`, Cancelled→`watch_only`, Withdrawn→`held`).
 
 ### Module 2 — Ingestion + status-change detection (Week 2–3)
 
@@ -114,26 +122,26 @@ Build strictly in order. Each module ends with a measurable acceptance test. No 
 
 - Inngest scheduled function polls MLS RESO Web API every **5 minutes** (or webhook subscription if broker supports it).
 - Upsert into `properties`, append to `property_status_history` on any change.
-- On transition into a "delisted" status, evaluate every active buy-box. For each match, insert `lead_events` row.
+- On transition into a "delisted" status, evaluate every active buy-box. For each match, insert a `lead_events` row, setting `eligibility` from the status (Expired→`contactable`, Cancelled→`watch_only`, Withdrawn→`held`).
 - Idempotent: re-polling the same data must not produce duplicate events.
-- Until live MLS access is online, use **a seed script** that replays a 30-day "Withdrawn" stream of fake events at accelerated speed — proves the alerting pipeline.
+- Until live MLS access is online, use **a seed script** that replays a 30-day delisting stream of fake events at accelerated speed — proves the alerting pipeline.
 
-**Acceptance test:** Replay seed-stream → exactly 100 `lead_events` rows created → re-run with no duplicates → handle a property that transitions Withdrawn → Active → Withdrawn correctly.
+**Acceptance test:** Replay seed-stream → exactly 100 `lead_events` rows created → re-run with no duplicates → handle a property that transitions Withdrawn → Active → Withdrawn correctly → a **Withdrawn** event surfaces as `held` (alert fires, contact actions blocked) while an **Expired** event surfaces as `contactable`.
 
 ### Module 3 — Enrichment + alerts (Week 3–4)
 
 **What:** On every new `lead_event`, enrich the property + push an alert.
 
 - Inngest `lead.created` workflow:
-  1. Call BatchData "Property Lookup" → owner, equity, mailing address.
-  2. Call BatchData "Skip Trace" → up to 5 phones, 2 emails, ranked by confidence.
-  3. Write to `owners` + `contacts`.
-  4. Build alert payload: address, owner name, top phone, "Was listed at $X for Y days. Withdrawn just now."
-  5. Send Web Push (registered PWA on my phone).
-  6. SMS fallback via Twilio if no push delivery within 60s.
+  1. Call BatchData "Property Lookup" → owner, equity, mailing address. (billable call #1)
+  2. Call BatchData "Skip Trace" → up to 5 phones, 2 emails, ranked by confidence. (billable call #2 — each lead is **two** billable calls, see §9)
+  3. Write to `owners` + `contacts`. Mark `eligibility=held` leads as enriched-but-contact-blocked.
+  4. Build alert payload: address, owner name, top phone, "Was listed at $X for Y days. {Expired|Withdrawn|Cancelled} just now."
+  5. **SMS-to-self via Twilio = primary alert channel** (reliable, time-critical; goes to my own number only — see §7).
+  6. **Web Push = enhancement**, sent in parallel for the in-app deep-link. iOS Web Push is best-effort and must not be the only channel for the <10-min SLA (see R11).
 - Cache: never re-trace an owner within 90 days. Log per-call cost to `enrichment_jobs.cost_cents`.
 
-**Acceptance test:** Synthetic `lead_event` fires → push lands on my phone within **<10 minutes** including BatchData latency → enrichment data visible in app → cost row written.
+**Acceptance test:** Synthetic `lead_event` fires → SMS-to-self lands on my phone within **<10 minutes** including BatchData latency → enrichment data visible in app → cost row written (two BatchData calls logged) → a `held` (Withdrawn) lead shows enrichment but contact buttons are disabled.
 
 ### Module 4 — Lead inbox + DFD PWA shell (Week 4–6)
 
@@ -142,6 +150,8 @@ Build strictly in order. Each module ends with a measurable acceptance test. No 
 - `/inbox` — list of `lead_events` newest first, swipe-to-dismiss, tap-to-open.
 - Lead detail page — property info, owner contact (call/text buttons that open native dialer/SMS — **no in-app dialer**), map view, "snooze 7 days" / "discard" / "saved" actions.
 - `/dfd` — map showing my current location + nearby properties (color-coded by buy-box match). Tap location → reverse geocode → "save to inbox" with on-demand BatchData lookup. Track route. Photo upload to Supabase Storage.
+- DFD shares the **same enrichment + compliance-gate path** as alerts: an on-demand skip trace produces contacts that pass through the same DNC/RND posture (§7) before any contact action. DFD-sourced leads default to `watch_only` until a buy-box match is confirmed.
+- **Privacy/storage note:** GPS route + photos are sensitive personal data. Set a Supabase Storage retention policy (e.g. purge routes/photos after N days) and keep this single-tenant; don't accumulate location history beyond what's useful.
 - PWA manifest + service worker for installability + Web Push.
 
 **Acceptance test:** Open PWA on my phone → see 3 seeded alerts in inbox → drive around the block → DFD shows my path and 2 properties along the way → tap one → BatchData lookup runs → owner appears.
@@ -167,52 +177,44 @@ In rough order of value:
 
 ## 7. Compliance gates (BLOCKERS — cannot ship MVP without)
 
-| Requirement | What it is | Lead time | Day-1 action |
-|---|---|---|---|
-| **A2P 10DLC** | US carrier-mandated SMS registration. Without it, Twilio SMS is throttled/blocked. | **4–12 weeks** | Register Brand + Campaign via Twilio Console |
-| **TCPA written consent** | Required before any SMS or call to a cell. | Process, not time | Build opt-in flow before any SMS feature ships |
-| **DNC scrubbing** | Scrub against federal + state DNC before SMS/call. | Account setup | Vendor: free.dnc.gov (registration) or DNC.com (paid API) |
-| **CAN-SPAM (when email lands)** | Physical address + unsubscribe in every email. | None | Bake into email templates |
-| **MLS data-use agreement** | Broker-signed agreement defining what I can do with the feed (e.g. no public display, no resale). | 2–8 weeks | Identify broker partner Week 1 |
-| **State wholesaling rules** | Some states require licensure / specific assignment-contract disclosures (TX, IL, OK, others). | Process | One-pager checklist for my state — get attorney review |
+> **Canonical detail + pre-ship checklist: [`COMPLIANCE.md`](./COMPLIANCE.md).** Summary below.
 
-**Strict rule for MVP:** Push + SMS alerts go to **me only** — that's a personal notification, no third-party SMS. A2P + TCPA do not block MVP **if and only if** SMS is restricted to my own number. The moment I send a text to a seller, A2P must be complete.
+Blockers, in rough priority: **MLS data-use scope** (S2 — may be ungrantable), **real-estate solicitation / tortious interference** (S1 — the Withdrawn `held` flag), **A2P 10DLC** (sole-prop is days, not months), **TCPA/PEWC** (one-to-one rule vacated; PEWC reinstated Aug 2025), **manual-seller-call rules** (manual dial + call-window), **DNC + internal DNC list**, **Reassigned-Number scrub**, **state mini-TCPAs**, **CAN-SPAM** (when email lands), and **state wholesaling licensure** (SC/IL/OK restrict it — market choice gates legality).
+
+**Strict rule for MVP:** Alerts (SMS-to-self + Web Push) go to **me only** — a personal notification, not third-party SMS. A2P + the seller-facing TCPA opt-in do not block MVP **if and only if** automated SMS is restricted to my own number. **However, the manual seller calls in the Definition of Done (§12) ARE regulated** — they must be manual-dial, DNC+RND-scrubbed, call-window-compliant, and Expired-only. The moment I send an *automated* text to a seller, A2P + PEWC must be complete.
 
 ---
 
 ## 8. Risk register
 
-| # | Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|---|
-| R1 | BatchData declines a solo-dev account | Medium | High | Fallback: **RentCast API** (cheap, public records) + **PropMix** + manual entry for owner lookups. Test all three Week 1. |
-| R2 | MLS broker partnership drags 6+ weeks | High | High | Start with **3 brokers in parallel** Week 1. Meanwhile, simulate with seed data. |
-| R3 | A2P 10DLC denied / takes 12 weeks | Medium | Medium | MVP doesn't depend on SMS-to-third-parties. Self-SMS only until A2P clears. |
-| R4 | Real-time delisting isn't actually a real moat (PropStream already has "Failed Listings") | High | High | Wedge isn't the *feature* — it's the **<10 min latency + auto-enrichment + my buy-box**. If PropStream's nightly batch already wins, kill the project, save the money. |
-| R5 | Web Push reliability on iOS | Medium | Low | SMS fallback to my own number is the safety net. iOS 16.4+ supports PWA push — confirm device. |
-| R6 | Withdrawn ≠ Motivated (some withdraw to relist next season) | High | Medium | Filter: only "Withdrawn after >60 days on market + ≥1 price drop." Tune in Module 1's buy-box rules. |
-| R7 | Owner contact info wrong / 50% bad phone rate | High | Medium | Multi-source: BatchData primary, REIPro/Whitepages secondary. Track per-source accuracy in `contacts.confidence_score`. |
-| R8 | Solo build burns out at Module 3 | Medium | High | Force a working alert into my pocket by end of Week 4. The dopamine carries Module 4. |
+> **Canonical register: [`RISKS.md`](./RISKS.md).** Top risks below.
+
+- **R1** — BatchData real-time API may have a **$2k/mo floor** (cost model ~20× swing). Confirm pay-as-you-go Week 1.
+- **R2 (S2)** — broker/MLS may be **unable to legally grant** an off-market + outreach-permitted feed. **Project-killing**; gate Day 1, pivot data source if needed.
+- **R4** — feed may refresh **nightly**, killing the <10-min moat before code starts. Confirm cadence Day 1.
+- **R6 (S1)** — Withdrawn is neither contactable (legal) nor reliably motivated. `held` flag + ">60 DOM + price drop" filter.
+- **R9** — TCPA/DNC litigation from skip-traced numbers. Manual dial + DNC/RND scrub + logging.
+- **R10** — state wholesaling licensure (SC/IL/OK) gates legality. Confirm market before build.
+- **R11** — iOS Web Push unreliable for <10-min delivery → SMS-to-self is primary.
 
 ---
 
 ## 9. Cost model (monthly, run-rate)
 
-| Volume | MLS | BatchData enrichment | Twilio (SMS to self) | Supabase | Vercel | Inngest | **Total** |
-|---|---|---|---|---|---|---|---|
-| 1k props tracked, 30 alerts/mo | $500–2k/yr ≈ $80/mo | ~30 lookups × $0.15 = $5 | $1.15 number + ~$0.20 SMS | Free tier | Free tier | Free tier | **~$90/mo** |
-| 10k props, 300 alerts/mo | $80 | ~300 × $0.15 = $45 | $1.50 | Free tier | Free tier | Free tier | **~$130/mo** |
-| 50k props, 1,500 alerts/mo | $80 | ~1,500 × $0.15 = $225 | $5 | $25 (Pro) | $20 (Pro) | $20 (Starter) | **~$380/mo** |
+> **Canonical model + monthly actuals: [`COSTS.md`](./COSTS.md).** Headline below.
 
-*Compared to REsimpli at $149–599/mo + add-ons, breakeven is at the lowest volume tier almost immediately.* Real expense is the **one-time MLS broker setup** + my time.
+- **~$90/mo + MLS** at low volume (1k props, 30 alerts) — competitive vs. REsimpli's $149–599/mo.
+- **Two big "ifs"** (both unconfirmed — R1/R2): the BatchData real-time API must be pay-as-you-go (else ~$2,090/mo, a ~20× swing) and the MLS feed must be affordable.
+- Each lead = **two** billable BatchData calls (~$0.14–0.30/lead). One-time MLS broker setup ($500–$2k) is the real expense.
 
 ---
 
 ## 10. Day-1 long-pole work (start before code)
 
-1. **Identify target market** + **shortlist 3 brokers** for MLS partnership. Email all 3 today.
-2. **Sign up BatchData**, **RentCast**, **PropMix** dev/sandbox accounts. First one to approve wins; the others are fallback.
+1. **Identify target market** — and **confirm the state permits unlicensed wholesaling at my intended cadence** before anything else (R10; SC/IL/OK restrict it). Then **shortlist 3 brokers** for MLS partnership and email all 3 today. In that email, ask the **gating question (S2/R2):** *"Can I receive Expired/Withdrawn/Cancelled statuses, does the data license permit contacting the owner, and how often does the feed update?"* — the last part validates the <10-min wedge (R4).
+2. **Sign up BatchData**, **RentCast**, **PropMix** dev/sandbox accounts. First one to approve wins; the others are fallback. **Explicitly confirm whether the real-time/automated API is pay-as-you-go or has a monthly minimum (R1).**
 3. **Provision Twilio account** + buy one local number in target market area code.
-4. **Start A2P 10DLC Brand registration** (4–12 wk clock). Even if MVP doesn't need it, Phase 2 does.
+4. **Start A2P 10DLC sole-prop Brand + Campaign registration** (~1–3 days brand, ~10–15 days campaign — not the multi-month clock for vetted brands). Even if MVP doesn't need it, Phase 2 does.
 5. **Create Supabase project**, **Vercel project**, **Inngest workspace**.
 6. **Set up `geoffschackmann1/wholesale-crm` repo** with this PLAN.md, ASSUMPTIONS.md, COMPLIANCE.md, RISKS.md, COSTS.md as separate files for easier review.
 7. **Apple Developer account ($99/yr)** only if iOS Web Push proves unreliable in testing.
@@ -239,7 +241,7 @@ wholesale-crm/
 │  └─ enrich/               # BatchData / RentCast adapters
 ├─ scripts/
 │  ├─ seed-properties.ts
-│  └─ replay-withdrawals.ts
+│  └─ replay-delistings.ts
 └─ inngest/                 # background workflow definitions
 ```
 
@@ -255,7 +257,7 @@ Rules:
 1. Build strictly Modules 1 → 4 in PLAN.md order. Do not start a module until prior module's acceptance test passes.
 2. Locked decisions in ASSUMPTIONS.md are non-negotiable unless you explain WHY in a PR and I approve.
 3. Compliance items in COMPLIANCE.md are blockers — do not ship a feature that violates them.
-4. Use real APIs in dev (with low volumes) against my sandbox accounts. No mocks.
+4. Use real APIs in dev (low volumes) against my sandbox accounts for **BatchData + Twilio** (available Day 1). **MLS is the exception:** until live broker access lands (weeks out), use the seed/replay harness — that is not a "mock" to be removed, it's the sanctioned MLS stand-in until the feed is live.
 5. After each module, update PROGRESS.md (5–10 lines: what runs end-to-end, what's stubbed, next).
 6. If the spec is ambiguous or your work hits a wall, STOP and ask. Don't expand scope without permission.
 7. Every commit message ends with a "Verified" line listing which acceptance test(s) it passes.
@@ -276,8 +278,8 @@ Rules:
 
 ## Definition of "MVP done"
 
-1. A real Withdrawn event in my target MLS → push notification on my phone → owner + phone visible → tap-to-call works. **End-to-end latency < 10 minutes.**
+1. A real **Expired** event in my target MLS → SMS-to-self on my phone → owner + phone visible → tap-to-call works. A **Withdrawn** event alerts me but shows contact actions blocked (`held`). **End-to-end latency < 10 minutes.**
 2. Buy-box rules let me filter to <50 alerts/month in a busy metro.
 3. DFD route logs my drives; PWA installs on iOS and Android.
-4. Monthly run-rate ≤ $150 at current volume.
-5. I've called 5 sellers from leads the system surfaced.
+4. Monthly run-rate ≤ $150 at current volume — **contingent on the BatchData API being pay-as-you-go and an affordable MLS feed (R1, R2).**
+5. I've called 5 sellers from **Expired-only** leads the system surfaced — each **manual-dial, DNC + RND-scrubbed, call-window-compliant** (§7), so this criterion no longer contradicts the compliance gates.
